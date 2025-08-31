@@ -13,8 +13,8 @@ logging.basicConfig(
 with open('data.json', 'r', encoding='utf-8-sig') as f:
     students_data = json.load(f)
 
-registered_students = {}
-sent_results = set()
+registered_students = {}  # لتخزين user_id لكل رقم جلوس
+sent_results = set()      # لتخزين أرقام الجلوس التي تم إرسال نتائجها
 
 # تحميل نتائج موجودة مسبقًا
 try:
@@ -54,7 +54,7 @@ async def send_result_message(user_id, result, bot):
     msg += f"النسبة: {result['percentage']}%"
     await bot.send_message(chat_id=user_id, text=msg)
 
-# حفظ رقم الجلوس والبيانات أو إرسال النتيجة فورًا
+# حفظ رقم الجلوس أو إرسال النتيجة فورًا
 async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     seat_number = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -97,6 +97,7 @@ async def monitor_results(app: Application):
         except FileNotFoundError:
             current_results = {}
 
+        # أرسل النتائج لكل الطلاب المسجلين الذين لم تُرسل لهم بعد
         for seat_number, result in current_results.items():
             if seat_number in registered_students and seat_number not in sent_results:
                 user_id = registered_students[seat_number]
@@ -105,7 +106,7 @@ async def monitor_results(app: Application):
                 logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number}")
 
         results = current_results
-        await asyncio.sleep(2)
+        await asyncio.sleep(2)  # تحقق كل ثانيتين
 
 # دالة post_init لتشغيل المراقب بعد بدء التطبيق
 async def post_init(app: Application):
