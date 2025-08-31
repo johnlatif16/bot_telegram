@@ -1,11 +1,11 @@
 ﻿{
-  "12345": {
-    "seatNumber": "12345",
-    "name": "أحمد علي",
+  "229244": {
+    "seatNumber": "229244",
+    "name": "جون لطيف",
     "stage": "الأولى الثانوي",
     "gradeLevel": "1",
     "educationDept": "الجيزة",
-    "schoolName": "مدرسة النيل",
+    "schoolName": "مدرسة شباب الشهيد مينا عطية فانوس",
     "notes": "ناجح",
     "mainSubjects": [
       {"name": "اللغة العربية", "score": 54.7, "outOf": 80},
