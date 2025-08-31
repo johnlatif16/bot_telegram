@@ -57,7 +57,7 @@ async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
     if seat_number not in students_data:
-        await update.message.reply_text("❌ رقم الجلوس غير موجود.")
+        await update.message.reply_text("رقم الجلوس غير موجود برجاء التحدث مع المطور https://wa.me/201274445091")
         return
 
     student = students_data[seat_number]
