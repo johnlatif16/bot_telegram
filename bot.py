@@ -111,7 +111,7 @@ async def post_init(app: Application):
 
 def main():
     # ضع التوكن الخاص بك هنا
-    app = Application.builder().token("YOUR_BOT_TOKEN_HERE").post_init(post_init).build()
+    app = Application.builder().token("8377255550:AAH8Q1Kp-V7ic0obBHYdQ9beIHoh_1iS_PQ").post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_seat))
     app.run_polling()
