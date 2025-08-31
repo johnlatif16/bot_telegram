@@ -5,7 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import logging
 
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
@@ -60,20 +60,22 @@ async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
     if seat_number not in students_data:
-        await update.message.reply_text("رقم الجلوس غير موجود برجاء التحدث مع المطور https://wa.me/201274445091")
+        await update.message.reply_text(
+            "رقم الجلوس غير موجود، برجاء التحدث مع المطور https://wa.me/201274445091"
+        )
         return
 
     student = students_data[seat_number]
     registered_students[seat_number] = user_id
 
-    # إذا كانت النتيجة موجودة مسبقًا، أرسلها فورًا بدون رسالة "تم التخزين"
+    # إذا النتيجة موجودة مسبقًا → أرسلها مباشرة
     if seat_number in results and seat_number not in sent_results:
         await send_result_message(user_id, results[seat_number], context.bot)
         sent_results.add(seat_number)
-        logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number} بعد التسجيل")
+        logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number} فورًا بعد التسجيل")
         return
 
-    # إذا النتيجة مش موجودة، سجل الطالب وأرسل رسالة "تم التخزين"
+    # إذا النتيجة غير موجودة بعد → سجل الطالب وأرسل رسالة "تم التخزين"
     msg = f"""✅ تم بنجاح تخزين رقم الجلوس الخاص بك وهو: {seat_number}
 
 بياناتك هي:
@@ -110,7 +112,7 @@ async def post_init(app: Application):
     asyncio.create_task(monitor_results(app))
 
 def main():
-    # ضع التوكن الخاص بك هنا
+    # ضع التوكن الحقيقي للبوت هنا
     app = Application.builder().token("8377255550:AAH8Q1Kp-V7ic0obBHYdQ9beIHoh_1iS_PQ").post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_seat))
