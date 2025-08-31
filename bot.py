@@ -1,10 +1,13 @@
-﻿import json
+import json
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
 
 # تحميل بيانات الطلاب
 with open('data.json', 'r', encoding='utf-8-sig') as f:
@@ -51,7 +54,7 @@ async def send_result_message(user_id, result, bot):
     msg += f"النسبة: {result['percentage']}%"
     await bot.send_message(chat_id=user_id, text=msg)
 
-# حفظ رقم الجلوس والبيانات
+# حفظ رقم الجلوس والبيانات أو إرسال النتيجة فورًا
 async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     seat_number = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -63,6 +66,14 @@ async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     student = students_data[seat_number]
     registered_students[seat_number] = user_id
 
+    # إذا كانت النتيجة موجودة مسبقًا، أرسلها فورًا بدون رسالة "تم التخزين"
+    if seat_number in results and seat_number not in sent_results:
+        await send_result_message(user_id, results[seat_number], context.bot)
+        sent_results.add(seat_number)
+        logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number} بعد التسجيل")
+        return
+
+    # إذا النتيجة مش موجودة، سجل الطالب وأرسل رسالة "تم التخزين"
     msg = f"""✅ تم بنجاح تخزين رقم الجلوس الخاص بك وهو: {seat_number}
 
 بياناتك هي:
@@ -74,13 +85,7 @@ async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(msg)
 
-    # إرسال النتيجة إذا كانت موجودة بالفعل
-    if seat_number in results and seat_number not in sent_results:
-        await send_result_message(user_id, results[seat_number], context.bot)
-        sent_results.add(seat_number)
-        logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number} بعد التسجيل المتأخر")
-
-# مراقبة result.json وإرسال النتائج الجديدة
+# مراقبة result.json وإرسال النتائج الجديدة تلقائيًا
 async def monitor_results(app: Application):
     global results
     while True:
@@ -105,11 +110,10 @@ async def post_init(app: Application):
     asyncio.create_task(monitor_results(app))
 
 def main():
-    app = Application.builder().token("8377255550:AAH8Q1Kp-V7ic0obBHYdQ9beIHoh_1iS_PQ").post_init(post_init).build()
+    # ضع التوكن الخاص بك هنا
+    app = Application.builder().token("YOUR_BOT_TOKEN_HERE").post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_seat))
-
-    # تشغيل البوت (يدير event loop داخليًا)
     app.run_polling()
 
 if __name__ == "__main__":
