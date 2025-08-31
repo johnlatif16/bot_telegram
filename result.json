@@ -1,11 +1,11 @@
-﻿{
-  "136": {
-    "seatNumber": "136",
-    "name": "جون لطيف",
+{
+  "136": { 
+    "seatNumber": "136", 
+    "name": "جون لطيف", 
     "stage": "الأولى الثانوي",
     "gradeLevel": "1",
     "educationDept": "الجيزة",
-    "schoolName": "مدرسة شباب الشهيد مينا عطية فانوس",
+    "schoolName": "مدرسة الشهيد مينا مجدي عطية فانوس", 
     "notes": "ناجح",
     "mainSubjects": [
       {"name": "اللغة العربية", "score": 54.7, "outOf": 80},
