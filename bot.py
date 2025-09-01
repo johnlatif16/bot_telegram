@@ -1,8 +1,14 @@
 import json
 import asyncio
+import logging
+import os
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import logging
+
+# تحميل المتغيرات من ملف .env
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -113,8 +119,9 @@ async def post_init(app: Application):
     asyncio.create_task(monitor_results(app))
 
 def main():
-    # ضع التوكن الحقيقي للبوت هنا
-    app = Application.builder().token("8377255550:AAE03B8AdlZwiz812j6_HL57ggEJyJNOk_k").post_init(post_init).build()
+    if not BOT_TOKEN:
+        raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_national_id))
     app.run_polling()
