@@ -6,14 +6,17 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import firebase_admin
 from firebase_admin import credentials, firestore
+import json
 
 # -------------------- إعداد البيئة --------------------
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH", "firebase_key.json")
+FIREBASE_CONFIG = os.getenv("FIREBASE_CONFIG")  # محتوى JSON كامل لمفتاح Firebase
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
+if not FIREBASE_CONFIG:
+    raise ValueError("❌ FIREBASE_CONFIG غير موجود في Environment Variables")
 
 # -------------------- إعداد Logging --------------------
 logging.basicConfig(
@@ -22,7 +25,8 @@ logging.basicConfig(
 )
 
 # -------------------- تهيئة Firebase --------------------
-cred = credentials.Certificate(FIREBASE_KEY_PATH)
+cred_dict = json.loads(FIREBASE_CONFIG)
+cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
