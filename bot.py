@@ -6,17 +6,14 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
 
 # -------------------- إعداد البيئة --------------------
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-FIREBASE_CONFIG = os.getenv("FIREBASE_CONFIG")  # محتوى JSON كامل لمفتاح Firebase
+FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH", "firebase_key.json")
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
-if not FIREBASE_CONFIG:
-    raise ValueError("❌ FIREBASE_CONFIG غير موجود في Environment Variables")
 
 # -------------------- إعداد Logging --------------------
 logging.basicConfig(
@@ -25,14 +22,13 @@ logging.basicConfig(
 )
 
 # -------------------- تهيئة Firebase --------------------
-cred_dict = json.loads(FIREBASE_CONFIG)
-cred = credentials.Certificate(cred_dict)
+cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # -------------------- تخزين البيانات في الذاكرة --------------------
-registered_students = {}  # لتخزين user_id لكل رقم قومي
-sent_results = set()      # لتخزين الأرقام القومية التي تم إرسال نتائجها
+registered_students = {}
+sent_results = set()
 
 # -------------------- دوال Firebase --------------------
 def get_student(national_id):
@@ -70,8 +66,6 @@ async def send_result_message(user_id, result, bot):
 المدرسة: {result['schoolName']}
 ملاحظات: {result['notes']}
 
-لو في تعديل كلم https://wa.me/201274445091
-
 📌 المواد الأساسية:
 """
     for subj in result.get('mainSubjects', []):
@@ -103,16 +97,18 @@ async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_result_message(user_id, result, context.bot)
         sent_results.add(national_id)
         logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id} فورًا بعد التسجيل")
-        return
+    else:
+        # لو النتيجة مش موجودة بعد
+        msg = f"""✅ تم بنجاح تخزين الرقم القومي الخاص بك وهو: {national_id}
 
-    msg = f"""✅ تم تسجيلك بنجاح!
+بياناتك هي:
 الاسم: {student.get('name', '')}
 المدرسة: {student.get('school', '')}
 الإدارة: {student.get('admin', '')}
 المحافظة: {student.get('governorate', '')}
 الرقم القومي: {national_id}
 """
-    await update.message.reply_text(msg)
+        await update.message.reply_text(msg)
 
 # -------------------- مراقبة النتائج الجديدة --------------------
 def monitor_results(app: Application):
