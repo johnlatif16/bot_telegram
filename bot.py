@@ -1,64 +1,41 @@
-import os
+import json
 import asyncio
 import logging
-import json
+import os
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# -------------------- إعداد البيئة --------------------
+# تحميل المتغيرات من ملف .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-FIREBASE_CONFIG = os.getenv("FIREBASE_CONFIG")  # JSON كامل من متغير البيئة
+FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS")  # مسار ملف serviceAccountKey.json
 
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN غير موجود في متغيرات البيئة")
-if not FIREBASE_CONFIG:
-    raise ValueError("❌ FIREBASE_CONFIG فارغ!")
-
-# -------------------- إعداد Logging --------------------
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# -------------------- تهيئة Firebase --------------------
-try:
-    cred_dict = json.loads(FIREBASE_CONFIG)
-except json.JSONDecodeError as e:
-    raise ValueError("❌ FIREBASE_CONFIG غير صالح JSON!") from e
+# تهيئة Firebase
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    firebase_admin.initialize_app(cred)
 
-cred = credentials.Certificate(cred_dict)
-firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# -------------------- تخزين البيانات في الذاكرة --------------------
-registered_students = {}  # user_id لكل رقم قومي
-sent_results = set()      # الأرقام القومية التي تم إرسال نتائجها
+registered_students = {}  # لتخزين user_id لكل رقم قومي
+sent_results = set()      # لتخزين الأرقام القومية التي تم إرسال نتائجها
 
-# -------------------- دوال Firebase --------------------
-def get_student(national_id):
-    doc = db.collection('students').document(national_id).get()
-    return doc.to_dict() if doc.exists else None
-
-def register_student(national_id, user_id):
-    db.collection('registered_students').document(national_id).set({
-        "user_id": user_id
-    })
-    registered_students[national_id] = user_id
-
-def get_result(national_id):
-    doc = db.collection('results').document(national_id).get()
-    return doc.to_dict() if doc.exists else None
-
-# -------------------- دوال البوت --------------------
+# رسالة الترحيب
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         '👋 أهلاً بك! أرسل رقمك القومي لتخزين بياناتك واستلام نتيجتك تلقائيًا.'
     )
 
+# دالة لإرسال نتيجة مفصلة
 async def send_result_message(user_id, result, bot):
     msg = f"""🎓 نتيجتك:
 
@@ -72,70 +49,80 @@ async def send_result_message(user_id, result, bot):
 
 📌 المواد الأساسية:
 """
-    for subj in result.get('mainSubjects', []):
+    for subj in result['mainSubjects']:
         msg += f"{subj['name']}: {subj['score']} / {subj['outOf']}\n"
 
     msg += "\n📌 المواد الإضافية:\n"
-    for subj in result.get('additionalSubjects', []):
+    for subj in result['additionalSubjects']:
         msg += f"{subj['name']}: {subj['score']} / {subj['outOf']}\n"
 
     msg += f"\nالمجموع: {result['totalScore']} / {result['totalOutOf']}\n"
     msg += f"النسبة: {result['percentage']}%"
     await bot.send_message(chat_id=user_id, text=msg)
 
+# حفظ الرقم القومي أو إرسال النتيجة فورًا
 async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     national_id = update.message.text.strip()
     user_id = update.message.from_user.id
 
-    student = get_student(national_id)
-    if not student:
+    # التحقق من وجود الطالب في Firestore
+    student_ref = db.collection("students").document(national_id)
+    student_doc = student_ref.get()
+    if not student_doc.exists:
         await update.message.reply_text(
             "الرقم القومي غير موجود، برجاء التحدث مع المطور https://wa.me/201274445091"
         )
         return
 
-    register_student(national_id, user_id)
+    student = student_doc.to_dict()
+    registered_students[national_id] = user_id
 
-    result = get_result(national_id)
-    if result and national_id not in sent_results:
-        await send_result_message(user_id, result, context.bot)
+    # التحقق من وجود النتيجة
+    result_ref = db.collection("results").document(national_id)
+    result_doc = result_ref.get()
+
+    if result_doc.exists and national_id not in sent_results:
+        await send_result_message(user_id, result_doc.to_dict(), context.bot)
         sent_results.add(national_id)
         logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id} فورًا بعد التسجيل")
-    else:
-        msg = f"""✅ تم بنجاح تخزين الرقم القومي الخاص بك وهو: {national_id}
+        return
+
+    msg = f"""✅ تم بنجاح تخزين الرقم القومي الخاص بك وهو: {national_id}
 
 بياناتك هي:
-الاسم: {student.get('name', '')}
-المدرسة: {student.get('school', '')}
-الإدارة: {student.get('admin', '')}
-المحافظة: {student.get('governorate', '')}
+الاسم: {student["name"]}
+المدرسة: {student["school"]}
+الإدارة: {student["admin"]}
+المحافظة: {student["governorate"]}
 الرقم القومي: {national_id}
 """
-        await update.message.reply_text(msg)
+    await update.message.reply_text(msg)
 
-# -------------------- مراقبة النتائج الجديدة --------------------
-def monitor_results(app: Application):
-    results_ref = db.collection('results')
+# مراقبة Firestore وإرسال النتائج الجديدة تلقائيًا
+async def monitor_results(app: Application):
+    global sent_results
+    while True:
+        results_ref = db.collection("results").stream()
+        for doc in results_ref:
+            national_id = doc.id
+            result = doc.to_dict()
+            if national_id in registered_students and national_id not in sent_results:
+                user_id = registered_students[national_id]
+                await send_result_message(user_id, result, app.bot)
+                sent_results.add(national_id)
+                logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id}")
+        await asyncio.sleep(2)
 
-    def on_snapshot(col_snapshot, changes, read_time):
-        for change in changes:
-            if change.type.name in ('ADDED', 'MODIFIED'):
-                national_id = change.document.id
-                result = change.document.to_dict()
-                if national_id in registered_students and national_id not in sent_results:
-                    user_id = registered_students[national_id]
-                    asyncio.create_task(send_result_message(user_id, result, app.bot))
-                    sent_results.add(national_id)
-                    logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id}")
-
-    results_ref.on_snapshot(on_snapshot)
-
-# -------------------- post_init لتشغيل المراقب --------------------
+# دالة post_init لتشغيل المراقب بعد بدء التطبيق
 async def post_init(app: Application):
-    monitor_results(app)
+    asyncio.create_task(monitor_results(app))
 
-# -------------------- main --------------------
 def main():
+    if not BOT_TOKEN:
+        raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
+    if not FIREBASE_CREDENTIALS:
+        raise ValueError("❌ FIREBASE_CREDENTIALS غير موجود في ملف .env")
+
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_national_id))
