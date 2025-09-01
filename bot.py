@@ -13,8 +13,8 @@ logging.basicConfig(
 with open('data.json', 'r', encoding='utf-8-sig') as f:
     students_data = json.load(f)
 
-registered_students = {}  # لتخزين user_id لكل رقم جلوس
-sent_results = set()      # لتخزين أرقام الجلوس التي تم إرسال نتائجها
+registered_students = {}  # لتخزين user_id لكل رقم قومي
+sent_results = set()      # لتخزين الأرقام القومية التي تم إرسال نتائجها
 
 # تحميل نتائج موجودة مسبقًا
 try:
@@ -26,14 +26,14 @@ except FileNotFoundError:
 # رسالة الترحيب
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        '👋 أهلاً بك! أرسل رقم جلوسك لتخزين بياناتك واستلام نتيجتك تلقائيًا.'
+        '👋 أهلاً بك! أرسل رقمك القومي لتخزين بياناتك واستلام نتيجتك تلقائيًا.'
     )
 
 # دالة لإرسال نتيجة مفصلة
 async def send_result_message(user_id, result, bot):
     msg = f"""🎓 نتيجتك:
 
-رقم الجلوس: {result['seatNumber']}
+الرقم القومي: {result['nationalID']}
 الاسم: {result['name']}
 المرحلة: {result['stage']}
 الصف: {result['gradeLevel']}
@@ -54,36 +54,36 @@ async def send_result_message(user_id, result, bot):
     msg += f"النسبة: {result['percentage']}%"
     await bot.send_message(chat_id=user_id, text=msg)
 
-# حفظ رقم الجلوس أو إرسال النتيجة فورًا
-async def save_seat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    seat_number = update.message.text.strip()
+# حفظ الرقم القومي أو إرسال النتيجة فورًا
+async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    national_id = update.message.text.strip()
     user_id = update.message.from_user.id
 
-    if seat_number not in students_data:
+    if national_id not in students_data:
         await update.message.reply_text(
-            "رقم الجلوس غير موجود، برجاء التحدث مع المطور https://wa.me/201274445091"
+            "الرقم القومي غير موجود، برجاء التحدث مع المطور https://wa.me/201274445091"
         )
         return
 
-    student = students_data[seat_number]
-    registered_students[seat_number] = user_id
+    student = students_data[national_id]
+    registered_students[national_id] = user_id
 
     # إذا النتيجة موجودة مسبقًا → أرسلها مباشرة
-    if seat_number in results and seat_number not in sent_results:
-        await send_result_message(user_id, results[seat_number], context.bot)
-        sent_results.add(seat_number)
-        logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number} فورًا بعد التسجيل")
+    if national_id in results and national_id not in sent_results:
+        await send_result_message(user_id, results[national_id], context.bot)
+        sent_results.add(national_id)
+        logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id} فورًا بعد التسجيل")
         return
 
     # إذا النتيجة غير موجودة بعد → سجل الطالب وأرسل رسالة "تم التخزين"
-    msg = f"""✅ تم بنجاح تخزين رقم الجلوس الخاص بك وهو: {seat_number}
+    msg = f"""✅ تم بنجاح تخزين الرقم القومي الخاص بك وهو: {national_id}
 
 بياناتك هي:
 الاسم: {student["name"]}
 المدرسة: {student["school"]}
 الإدارة: {student["admin"]}
 المحافظة: {student["governorate"]}
-رقم الجلوس: {seat_number}
+الرقم القومي: {national_id}
 """
     await update.message.reply_text(msg)
 
@@ -98,12 +98,12 @@ async def monitor_results(app: Application):
             current_results = {}
 
         # أرسل النتائج لكل الطلاب المسجلين الذين لم تُرسل لهم بعد
-        for seat_number, result in current_results.items():
-            if seat_number in registered_students and seat_number not in sent_results:
-                user_id = registered_students[seat_number]
+        for national_id, result in current_results.items():
+            if national_id in registered_students and national_id not in sent_results:
+                user_id = registered_students[national_id]
                 await send_result_message(user_id, result, app.bot)
-                sent_results.add(seat_number)
-                logging.info(f"تم إرسال النتيجة للطالب رقم الجلوس {seat_number}")
+                sent_results.add(national_id)
+                logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id}")
 
         results = current_results
         await asyncio.sleep(2)  # تحقق كل ثانيتين
@@ -114,9 +114,9 @@ async def post_init(app: Application):
 
 def main():
     # ضع التوكن الحقيقي للبوت هنا
-    app = Application.builder().token("8377255550:AAH8Q1Kp-V7ic0obBHYdQ9beIHoh_1iS_PQ").post_init(post_init).build()
+    app = Application.builder().token("8377255550:AAE03B8AdlZwiz812j6_HL57ggEJyJNOk_k").post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_seat))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_national_id))
     app.run_polling()
 
 if __name__ == "__main__":
