@@ -70,6 +70,8 @@ async def send_result_message(user_id, result, bot):
 المدرسة: {result['schoolName']}
 ملاحظات: {result['notes']}
 
+لو في تعديل كلم https://wa.me/201274445091
+
 📌 المواد الأساسية:
 """
     for subj in result.get('mainSubjects', []):
