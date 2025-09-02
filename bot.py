@@ -6,32 +6,32 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, firestore
 
 # تحميل المتغيرات من .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS")  # محتوى JSON كـ string
-FIREBASE_DB_URL = os.getenv("FIREBASE_DB_URL")  # لينك قاعدة البيانات من Firebase
 
 # تهيئة Firebase
 if not firebase_admin._apps:
     cred = credentials.Certificate(json.loads(FIREBASE_CREDENTIALS))
-    firebase_admin.initialize_app(cred, {
-        "databaseURL": FIREBASE_DB_URL
-    })
+    firebase_admin.initialize_app(cred)
 
-# مراجع لجدولين: الطلاب والنتائج
-students_ref = db.reference("students")  # بديل data.json
-results_ref = db.reference("results")    # بديل result.json
+# Firestore client
+db = firestore.client()
+
+# مراجع لمجموعتين (collections): students و results
+students_ref = db.collection("students")
+results_ref = db.collection("results")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-registered_students = {}  # لتخزين user_id لكل رقم قومي
-sent_results = set()      # لتخزين الأرقام القومية التي تم إرسال نتائجها
+registered_students = {}
+sent_results = set()
 
 # رسالة الترحيب
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '👋 أهلاً بك! أرسل رقمك القومي لتخزين بياناتك واستلام نتيجتك تلقائيًا.'
     )
 
-# دالة لإرسال نتيجة مفصلة
+# إرسال نتيجة
 async def send_result_message(user_id, result, bot):
     msg = f"""🎓 نتيجتك:
 
@@ -64,29 +64,30 @@ async def send_result_message(user_id, result, bot):
     msg += f"النسبة: {result['percentage']}%"
     await bot.send_message(chat_id=user_id, text=msg)
 
-# حفظ الرقم القومي أو إرسال النتيجة فورًا
+# تخزين الرقم القومي
 async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     national_id = update.message.text.strip()
     user_id = update.message.from_user.id
 
-    student = students_ref.child(national_id).get()
-    if not student:
+    student_doc = students_ref.document(national_id).get()
+    if not student_doc.exists:
         await update.message.reply_text(
             "الرقم القومي غير موجود، برجاء التحدث مع المطور https://wa.me/201274445091"
         )
         return
 
+    student = student_doc.to_dict()
     registered_students[national_id] = user_id
 
-    # إذا النتيجة موجودة مسبقًا → أرسلها مباشرة
-    result = results_ref.child(national_id).get()
-    if result and national_id not in sent_results:
-        await send_result_message(user_id, result, context.bot)
+    # لو النتيجة موجودة
+    result_doc = results_ref.document(national_id).get()
+    if result_doc.exists and national_id not in sent_results:
+        await send_result_message(user_id, result_doc.to_dict(), context.bot)
         sent_results.add(national_id)
-        logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id} فورًا بعد التسجيل")
+        logging.info(f"تم إرسال النتيجة للطالب {national_id} فورًا بعد التسجيل")
         return
 
-    # إذا النتيجة غير موجودة بعد → سجل الطالب وأرسل رسالة "تم التخزين"
+    # رسالة تخزين بيانات
     msg = f"""✅ تم بنجاح تخزين الرقم القومي الخاص بك وهو: {national_id}
 
 بياناتك هي:
@@ -98,19 +99,21 @@ async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(msg)
 
-# مراقبة النتائج الجديدة في Firebase
+# متابعة النتائج الجديدة
 async def monitor_results(app: Application):
     while True:
-        current_results = results_ref.get() or {}
-        for national_id, result in current_results.items():
+        results = results_ref.stream()
+        for doc in results:
+            national_id = doc.id
+            result = doc.to_dict()
             if national_id in registered_students and national_id not in sent_results:
                 user_id = registered_students[national_id]
                 await send_result_message(user_id, result, app.bot)
                 sent_results.add(national_id)
-                logging.info(f"تم إرسال النتيجة للطالب بالرقم القومي {national_id}")
-        await asyncio.sleep(2)  # تحقق كل ثانيتين
+                logging.info(f"تم إرسال النتيجة للطالب {national_id}")
+        await asyncio.sleep(2)
 
-# دالة post_init لتشغيل المراقب بعد بدء التطبيق
+# post_init
 async def post_init(app: Application):
     asyncio.create_task(monitor_results(app))
 
