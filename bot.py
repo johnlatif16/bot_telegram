@@ -19,7 +19,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# تهيئة Firebase من FIREBASE_CONFIG
+# تهيئة Firebase
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
 
@@ -32,8 +32,8 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-registered_students = {}  # user_id لكل رقم قومي
-sent_results = set()      # الأرقام القومية اللي اتبعتت نتائجها
+registered_students = {}
+sent_results = set()
 
 
 # رسالة الترحيب
@@ -73,9 +73,10 @@ async def send_result_message(user_id, result, bot):
 # تسجيل الرقم القومي أو إرسال النتيجة فورًا
 async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     national_id = update.message.text.strip()
+    print(f"🔍 الرقم القومي المكتوب: {national_id}")  # Debug log
+
     user_id = update.message.from_user.id
 
-    # تحقق من وجود الطالب
     student_ref = db.collection("students").document(national_id)
     student_doc = student_ref.get()
     if not student_doc.exists:
@@ -87,7 +88,6 @@ async def save_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     student = student_doc.to_dict()
     registered_students[national_id] = user_id
 
-    # تحقق من النتيجة
     result_ref = db.collection("results").document(national_id)
     result_doc = result_ref.get()
 
