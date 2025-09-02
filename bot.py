@@ -18,7 +18,8 @@ logging.basicConfig(
 )
 
 # تهيئة Firebase
-cred = credentials.Certificate("serviceAccountKey.json")
+import json, os
+cred = credentials.Certificate(json.loads(os.environ["FIREBASE_CREDENTIALS"]))
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
