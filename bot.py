@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import logging
-import tempfile
 from functools import partial
 from dotenv import load_dotenv
 from telegram import Update
@@ -14,23 +13,18 @@ from firebase_admin import credentials, firestore
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH")         # مسار ملف JSON
-FIREBASE_KEY_JSON = os.getenv("FIREBASE_KEY_JSON")         # بديل: محتوى JSON كامل
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))      # بالثواني
+FIREBASE_KEY_JSON = os.getenv("FIREBASE_KEY_JSON")
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
+if not FIREBASE_KEY_JSON:
+    raise ValueError("❌ FIREBASE_KEY_JSON غير موجود في ملف .env")
 
 # -------------------- تهيئة Firebase --------------------
 if not firebase_admin._apps:
-    if FIREBASE_KEY_JSON:  # محتوى JSON
-        service_account_info = json.loads(FIREBASE_KEY_JSON)
-        cred = credentials.Certificate(service_account_info)
-    elif FIREBASE_KEY_PATH:  # مسار ملف
-        cred = credentials.Certificate(FIREBASE_KEY_PATH)
-    else:
-        raise ValueError("❌ يجب تعريف FIREBASE_KEY_PATH أو FIREBASE_KEY_JSON في ملف .env")
-
+    service_account_info = json.loads(FIREBASE_KEY_JSON)
+    cred = credentials.Certificate(service_account_info)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -52,7 +46,6 @@ async def _run_blocking(func, *args, **kwargs):
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 async def load_persistent_state():
-    """تحميل التسجيلات والإشعارات السابقة من Firestore."""
     global registered_students, notified_results
     try:
         docs = await _run_blocking(lambda: list(db.collection("registered_students").stream()))
