@@ -103,7 +103,7 @@ async def get_result_from_db(national_id: str):
 # -------------------- دوال البوت --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 أهلاً! أرسل رقمك القومي (14 رقم) لتسجيله واستلام نتيجتك تلقائيًا."
+        "👋 أهلاً! أرسل رقمك القومي (14 رقم) أو رقم الجلوس لتسجيله واستلام نتيجتك تلقائيًا."
     )
 
 async def send_result_message(user_id: int, result: dict, bot):
@@ -133,28 +133,38 @@ async def send_result_message(user_id: int, result: dict, bot):
     except Exception:
         logger.exception("فشل في إرسال رسالة النتيجة إلى user_id=%s", user_id)
 
-async def handle_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    national_id = update.message.text.strip()
+async def handle_student_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    identifier = update.message.text.strip()
     user_id = update.message.from_user.id
 
-    if not national_id.isdigit() or len(national_id) < 10:
-        await update.message.reply_text("❌ الرقم القومي غير صالح. من فضلك أدخل رقمًا صحيحًا.")
+    student = None
+    national_id = None
+
+    # رقم قومي
+    if identifier.isdigit() and len(identifier) == 14:
+        national_id = identifier
+        student = await get_student_from_db(national_id)
+    else:
+        # رقم جلوس
+        docs = await _run_blocking(lambda: db.collection("students").where("seatNumber", "==", identifier).stream())
+        for d in docs:
+            student = d.to_dict()
+            national_id = d.id  # الرقم القومي هو ID
+            break
+
+    if not student or not national_id:
+        await update.message.reply_text("⚠️ لم يتم العثور على الطالب. تأكد من الرقم القومي أو رقم الجلوس.")
         return
 
-    student = await get_student_from_db(national_id)
-    if not student:
-        await update.message.reply_text(
-            "⚠️ الرقم القومي غير موجود في قاعدة البيانات.\nتواصل مع المطور: https://wa.me/201274445091"
-        )
-        return
-
+    # سجل الطالب
     await save_registered_student(national_id, user_id)
 
+    # شوف النتيجة
     result = await get_result_from_db(national_id)
     if result and national_id not in notified_results:
         await send_result_message(user_id, result, context.bot)
         await mark_notified(national_id, user_id)
-        logger.info("تم إرسال النتيجة للطالب بالرقم القومي %s فور التسجيل", national_id)
+        logger.info("📤 تم إرسال النتيجة للطالب %s فور التسجيل", national_id)
         return
 
     msg = (
@@ -164,6 +174,7 @@ async def handle_national_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"الإدارة: {student.get('admin','')}\n"
         f"المحافظة: {student.get('governorate','')}\n"
         f"الرقم القومي: {national_id}\n"
+        f"رقم الجلوس: {student.get('seatNumber','')}\n"
     )
     await update.message.reply_text(msg)
 
@@ -194,7 +205,7 @@ async def post_init(app: Application):
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_national_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_identifier))
     app.run_polling()
 
 if __name__ == "__main__":
