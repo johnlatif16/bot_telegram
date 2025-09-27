@@ -14,17 +14,24 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FIREBASE_KEY_JSON = os.getenv("FIREBASE_KEY_JSON")
+FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
-if not FIREBASE_KEY_JSON:
-    raise ValueError("❌ FIREBASE_KEY_JSON غير موجود في ملف .env")
+
+if not FIREBASE_KEY_JSON and not FIREBASE_KEY_PATH:
+    raise ValueError("❌ يجب تحديد FIREBASE_KEY_JSON أو FIREBASE_KEY_PATH في ملف .env")
 
 # -------------------- تهيئة Firebase --------------------
 if not firebase_admin._apps:
-    service_account_info = json.loads(FIREBASE_KEY_JSON)
-    cred = credentials.Certificate(service_account_info)
+    if FIREBASE_KEY_JSON:
+        service_account_info = json.loads(FIREBASE_KEY_JSON)
+        if "private_key" in service_account_info:
+            service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+        cred = credentials.Certificate(service_account_info)
+    else:
+        cred = credentials.Certificate(FIREBASE_KEY_PATH)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -103,14 +110,13 @@ async def get_result_from_db(national_id: str):
 # -------------------- دوال البوت --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 أهلاً! أرسل رقمك القومي (14 رقم) أو رقم الجلوس لتسجيله واستلام نتيجتك تلقائيًا."
+        "👋 أهلاً! أرسل رقمك القومي (14 رقم) أو رقم جلوسك لتسجيله واستلام نتيجتك تلقائيًا."
     )
 
 async def send_result_message(user_id: int, result: dict, bot):
     try:
         msg = [
             "🎓 نتيجتك:",
-            f"الرقم القومي: {result.get('nationalID', '')}",
             f"الاسم: {result.get('name', '')}",
             f"المرحلة: {result.get('stage', '')}",
             f"الصف: {result.get('gradeLevel', '')}",
@@ -133,13 +139,13 @@ async def send_result_message(user_id: int, result: dict, bot):
     except Exception:
         logger.exception("فشل في إرسال رسالة النتيجة إلى user_id=%s", user_id)
 
-# -------------------- تسجيل الطالب بالرقم القومي أو الجلوس --------------------
 async def handle_student_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
     identifier = update.message.text.strip()
     user_id = update.message.from_user.id
 
     student = None
     national_id = None
+    is_national_id = False
 
     # ✅ لو دخل 14 رقم -> اعتبره رقم قومي
     if identifier.isdigit() and len(identifier) == 14:
@@ -147,6 +153,7 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
         if doc.exists:
             student = doc.to_dict()
             national_id = doc.id
+            is_national_id = True
 
     # ✅ لو مش رقم قومي -> ابحث بالـ seatNumber
     if not student:
@@ -155,6 +162,7 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
         for d in docs:
             student = d.to_dict()
             national_id = d.id   # الرقم القومي
+            is_national_id = False
             break
 
     if not student or not national_id:
@@ -171,15 +179,26 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
         await mark_notified(national_id, user_id)
         return
 
-    msg = (
-        "✅ تم تسجيلك بنجاح!\n"
-        f"الاسم: {student.get('name','')}\n"
-        f"المدرسة: {student.get('school','')}\n"
-        f"الإدارة: {student.get('admin','')}\n"
-        f"المحافظة: {student.get('governorate','')}\n"
-        f"الرقم القومي: {national_id}\n"
-        f"رقم الجلوس: {student.get('seatNumber','')}\n"
-    )
+    # ✅ الرسالة حسب نوع الإدخال
+    if is_national_id:
+        msg = (
+            "✅ تم تسجيلك بنجاح!\n"
+            f"الاسم: {student.get('name','')}\n"
+            f"المدرسة: {student.get('school','')}\n"
+            f"الإدارة: {student.get('admin','')}\n"
+            f"المحافظة: {student.get('governorate','')}\n"
+            f"الرقم القومي: {national_id}\n"
+        )
+    else:
+        msg = (
+            "✅ تم تسجيلك بنجاح!\n"
+            f"الاسم: {student.get('name','')}\n"
+            f"المدرسة: {student.get('school','')}\n"
+            f"الإدارة: {student.get('admin','')}\n"
+            f"المحافظة: {student.get('governorate','')}\n"
+            f"رقم الجلوس: {student.get('seatNumber','')}\n"
+        )
+
     await update.message.reply_text(msg)
 
 # -------------------- مهمة background لفحص النتائج --------------------
