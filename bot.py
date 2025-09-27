@@ -133,6 +133,7 @@ async def send_result_message(user_id: int, result: dict, bot):
     except Exception:
         logger.exception("فشل في إرسال رسالة النتيجة إلى user_id=%s", user_id)
 
+# -------------------- تسجيل الطالب بالرقم القومي أو الجلوس --------------------
 async def handle_student_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
     identifier = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -140,16 +141,20 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
     student = None
     national_id = None
 
-    # رقم قومي
+    # ✅ لو دخل 14 رقم -> اعتبره رقم قومي
     if identifier.isdigit() and len(identifier) == 14:
-        national_id = identifier
-        student = await get_student_from_db(national_id)
-    else:
-        # رقم جلوس
-        docs = await _run_blocking(lambda: db.collection("students").where("seatNumber", "==", identifier).stream())
+        doc = await _run_blocking(lambda: db.collection("students").document(identifier).get())
+        if doc.exists:
+            student = doc.to_dict()
+            national_id = doc.id
+
+    # ✅ لو مش رقم قومي -> ابحث بالـ seatNumber
+    if not student:
+        docs = await _run_blocking(lambda: db.collection("students")
+                                   .where("seatNumber", "==", identifier).stream())
         for d in docs:
             student = d.to_dict()
-            national_id = d.id  # الرقم القومي هو ID
+            national_id = d.id   # الرقم القومي
             break
 
     if not student or not national_id:
@@ -159,12 +164,11 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
     # سجل الطالب
     await save_registered_student(national_id, user_id)
 
-    # شوف النتيجة
+    # لو فيه نتيجة ابعتها
     result = await get_result_from_db(national_id)
     if result and national_id not in notified_results:
         await send_result_message(user_id, result, context.bot)
         await mark_notified(national_id, user_id)
-        logger.info("📤 تم إرسال النتيجة للطالب %s فور التسجيل", national_id)
         return
 
     msg = (
