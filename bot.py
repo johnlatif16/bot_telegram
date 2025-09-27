@@ -14,24 +14,17 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FIREBASE_KEY_JSON = os.getenv("FIREBASE_KEY_JSON")
-FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في ملف .env")
-
-if not FIREBASE_KEY_JSON and not FIREBASE_KEY_PATH:
-    raise ValueError("❌ يجب تحديد FIREBASE_KEY_JSON أو FIREBASE_KEY_PATH في ملف .env")
+if not FIREBASE_KEY_JSON:
+    raise ValueError("❌ FIREBASE_KEY_JSON غير موجود في ملف .env")
 
 # -------------------- تهيئة Firebase --------------------
 if not firebase_admin._apps:
-    if FIREBASE_KEY_JSON:
-        service_account_info = json.loads(FIREBASE_KEY_JSON)
-        if "private_key" in service_account_info:
-            service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
-        cred = credentials.Certificate(service_account_info)
-    else:
-        cred = credentials.Certificate(FIREBASE_KEY_PATH)
+    service_account_info = json.loads(FIREBASE_KEY_JSON)
+    cred = credentials.Certificate(service_account_info)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -91,13 +84,23 @@ async def mark_notified(national_id: str, user_id: int):
     except Exception:
         logger.exception("فشل في حفظ notification إلى Firestore")
 
-async def get_student_from_db(national_id: str):
+async def get_student_by_national_id(national_id: str):
     try:
         doc = await _run_blocking(lambda: db.collection("students").document(national_id).get())
         return doc.to_dict() if doc.exists else None
     except Exception:
-        logger.exception("فشل في جلب بيانات الطالب من Firestore")
+        logger.exception("فشل في جلب بيانات الطالب من Firestore بالرقم القومي")
         return None
+
+async def get_student_by_seat_number(seat_number: str):
+    try:
+        docs = await _run_blocking(lambda: db.collection("students").where("seatNumber", "==", seat_number).stream())
+        for d in docs:
+            return d.to_dict(), d.id
+        return None, None
+    except Exception:
+        logger.exception("فشل في جلب بيانات الطالب من Firestore برقم الجلوس")
+        return None, None
 
 async def get_result_from_db(national_id: str):
     try:
@@ -110,13 +113,15 @@ async def get_result_from_db(national_id: str):
 # -------------------- دوال البوت --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 أهلاً! أرسل رقمك القومي (14 رقم) أو رقم جلوسك لتسجيله واستلام نتيجتك تلقائيًا."
+        "👋 أهلاً! أرسل رقمك القومي (14 رقم) أو رقم الجلوس لتسجيله واستلام نتيجتك تلقائيًا."
     )
 
 async def send_result_message(user_id: int, result: dict, bot):
     try:
         msg = [
             "🎓 نتيجتك:",
+            f"الرقم القومي: {result.get('nationalID', '')}",
+            f"رقم الجلوس: {result.get('seatNumber', '')}",
             f"الاسم: {result.get('name', '')}",
             f"المرحلة: {result.get('stage', '')}",
             f"الصف: {result.get('gradeLevel', '')}",
@@ -145,25 +150,15 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
 
     student = None
     national_id = None
-    is_national_id = False
 
-    # ✅ لو دخل 14 رقم -> اعتبره رقم قومي
+    # ✅ لو دخل 14 رقم = رقم قومي
     if identifier.isdigit() and len(identifier) == 14:
-        doc = await _run_blocking(lambda: db.collection("students").document(identifier).get())
-        if doc.exists:
-            student = doc.to_dict()
-            national_id = doc.id
-            is_national_id = True
+        student = await get_student_by_national_id(identifier)
+        national_id = identifier if student else None
 
     # ✅ لو مش رقم قومي -> ابحث بالـ seatNumber
     if not student:
-        docs = await _run_blocking(lambda: db.collection("students")
-                                   .where("seatNumber", "==", identifier).stream())
-        for d in docs:
-            student = d.to_dict()
-            national_id = d.id   # الرقم القومي
-            is_national_id = False
-            break
+        student, national_id = await get_student_by_seat_number(identifier)
 
     if not student or not national_id:
         await update.message.reply_text("⚠️ لم يتم العثور على الطالب. تأكد من الرقم القومي أو رقم الجلوس.")
@@ -179,8 +174,8 @@ async def handle_student_identifier(update: Update, context: ContextTypes.DEFAUL
         await mark_notified(national_id, user_id)
         return
 
-    # ✅ الرسالة حسب نوع الإدخال
-    if is_national_id:
+    # ✅ الرسالة بتتغير حسب إدخال المستخدم
+    if identifier.isdigit() and len(identifier) == 14:
         msg = (
             "✅ تم تسجيلك بنجاح!\n"
             f"الاسم: {student.get('name','')}\n"
